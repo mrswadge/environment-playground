@@ -1,0 +1,156 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Apache HTTPD + WildFly Hybrid Environment Vagrantfile
+# Apache as reverse proxy in front of WildFly Application Server
+#
+# Security Note: Change default admin password after provisioning
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "httpd-wildfly"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.24"
+
+  # Apache reverse proxy ports (external access)
+  config.vm.network "forwarded_port", guest: 80, host: 8105
+  config.vm.network "forwarded_port", guest: 443, host: 8106
+  # WildFly Admin Console (direct access for management)
+  config.vm.network "forwarded_port", guest: 9990, host: 9992
+
+  # VM resources
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "httpd-wildfly-vm"
+    vb.memory = "2048"
+    vb.cpus = 2
+  end
+
+  # Shared folders
+  config.vm.synced_folder "./deployments", "/home/vagrant/deployments", create: true
+  config.vm.synced_folder "./htdocs", "/var/www/html", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y apache2 apache2-utils ssl-cert openjdk-17-jdk wget curl unzip
+
+    # Enable Apache modules for reverse proxy
+    a2enmod proxy
+    a2enmod proxy_http
+    a2enmod proxy_wstunnel
+    a2enmod proxy_balancer
+    a2enmod lbmethod_byrequests
+    a2enmod headers
+    a2enmod ssl
+    a2enmod rewrite
+
+    # Set JAVA_HOME
+    cat > /etc/profile.d/java.sh << 'EOF'
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH=$JAVA_HOME/bin:$PATH
+EOF
+    source /etc/profile.d/java.sh
+
+    # Create wildfly user
+    useradd -m -s /bin/bash wildfly || true
+
+    # Download and install WildFly
+    WILDFLY_VERSION="30.0.1.Final"
+    cd /tmp
+    wget -q https://github.com/wildfly/wildfly/releases/download/${WILDFLY_VERSION}/wildfly-${WILDFLY_VERSION}.tar.gz
+    tar xzf wildfly-${WILDFLY_VERSION}.tar.gz
+    mv wildfly-${WILDFLY_VERSION} /opt/wildfly
+    chown -R wildfly:wildfly /opt/wildfly
+
+    # Set WildFly environment
+    cat > /etc/profile.d/wildfly.sh << 'EOF'
+export JBOSS_HOME=/opt/wildfly
+export PATH=$JBOSS_HOME/bin:$PATH
+EOF
+
+    # Create admin user for WildFly
+    /opt/wildfly/bin/add-user.sh -u admin -p admin123 -g admin
+
+    # Create WildFly systemd service
+    cat > /etc/systemd/system/wildfly.service << 'EOF'
+[Unit]
+Description=WildFly Application Server
+After=network.target
+
+[Service]
+Type=simple
+User=wildfly
+Group=wildfly
+Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
+Environment="JBOSS_HOME=/opt/wildfly"
+ExecStart=/opt/wildfly/bin/standalone.sh -b 0.0.0.0 -bmanagement 0.0.0.0
+ExecStop=/opt/wildfly/bin/jboss-cli.sh --connect command=:shutdown
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Configure Apache as reverse proxy for WildFly
+    cat > /etc/apache2/sites-available/wildfly-proxy.conf << 'EOF'
+<VirtualHost *:80>
+    ServerName localhost
+    
+    # Proxy settings for WildFly
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:8080/
+    ProxyPassReverse / http://localhost:8080/
+    
+    # WebSocket support for management console
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteCond %{HTTP:Connection} upgrade [NC]
+    RewriteRule ^/?(.*) ws://localhost:8080/$1 [P,L]
+    
+    # Headers for proper forwarding
+    RequestHeader set X-Forwarded-Proto "http"
+    RequestHeader set X-Forwarded-Port "80"
+    
+    ErrorLog \${APACHE_LOG_DIR}/wildfly-proxy-error.log
+    CustomLog \${APACHE_LOG_DIR}/wildfly-proxy-access.log combined
+</VirtualHost>
+
+# Separate config for management console (optional)
+<VirtualHost *:443>
+    ServerName localhost
+    
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/ssl-cert-snakeoil.pem
+    SSLCertificateKeyFile /etc/ssl/private/ssl-cert-snakeoil.key
+    
+    # Proxy to WildFly management
+    ProxyPass /management http://localhost:9990/management
+    ProxyPassReverse /management http://localhost:9990/management
+    
+    ErrorLog \${APACHE_LOG_DIR}/wildfly-mgmt-error.log
+    CustomLog \${APACHE_LOG_DIR}/wildfly-mgmt-access.log combined
+</VirtualHost>
+EOF
+
+    # Enable sites and services
+    a2dissite 000-default
+    a2ensite wildfly-proxy
+    a2ensite default-ssl
+
+    systemctl daemon-reload
+    systemctl enable wildfly
+    systemctl start wildfly
+    systemctl restart apache2
+
+    echo "==========================================="
+    echo "Apache HTTPD + WildFly environment installed!"
+    echo ""
+    echo "Apache Proxy: http://localhost:8105"
+    echo "WildFly Admin: http://localhost:9992"
+    echo "Admin credentials: admin / admin123"
+    echo ""
+    echo "Deploy apps to /opt/wildfly/standalone/deployments"
+    echo "==========================================="
+  SHELL
+end

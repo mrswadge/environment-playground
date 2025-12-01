@@ -1,0 +1,100 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Apache HTTPD + WebLogic Hybrid Environment Vagrantfile
+# Apache as reverse proxy in front of WebLogic Server
+#
+# Security Note: Change default passwords after provisioning
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "httpd-weblogic"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.22"
+
+  # Apache reverse proxy ports (external access)
+  config.vm.network "forwarded_port", guest: 80, host: 8100
+  config.vm.network "forwarded_port", guest: 443, host: 8101
+  # WebLogic Admin Console (direct access for management)
+  config.vm.network "forwarded_port", guest: 7001, host: 7003
+
+  # VM resources - WebLogic needs more memory
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "httpd-weblogic-vm"
+    vb.memory = "4096"
+    vb.cpus = 2
+  end
+
+  # Shared folders
+  config.vm.synced_folder "./htdocs", "/var/www/html", create: true
+  config.vm.synced_folder "./weblogic-deployments", "/home/vagrant/deployments", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y apache2 apache2-utils ssl-cert openjdk-11-jdk wget curl unzip
+
+    # Enable Apache modules for reverse proxy
+    a2enmod proxy
+    a2enmod proxy_http
+    a2enmod proxy_balancer
+    a2enmod lbmethod_byrequests
+    a2enmod headers
+    a2enmod ssl
+    a2enmod rewrite
+
+    # Set JAVA_HOME
+    echo 'export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64' >> /etc/profile.d/java.sh
+    source /etc/profile.d/java.sh
+
+    # Create WebLogic user
+    useradd -m -s /bin/bash oracle || true
+    echo "oracle:oracle" | chpasswd
+    mkdir -p /opt/oracle/middleware
+    mkdir -p /opt/oracle/config/domains
+    chown -R oracle:oracle /opt/oracle
+
+    # Configure Apache as reverse proxy for WebLogic
+    cat > /etc/apache2/sites-available/weblogic-proxy.conf << 'EOF'
+<VirtualHost *:80>
+    ServerName localhost
+    
+    # Proxy settings for WebLogic
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:7001/
+    ProxyPassReverse / http://localhost:7001/
+    
+    # WebLogic console access
+    <Location /console>
+        ProxyPass http://localhost:7001/console
+        ProxyPassReverse http://localhost:7001/console
+    </Location>
+    
+    # Headers
+    RequestHeader set X-Forwarded-Proto "http"
+    RequestHeader set X-Forwarded-Port "80"
+    
+    ErrorLog \${APACHE_LOG_DIR}/weblogic-proxy-error.log
+    CustomLog \${APACHE_LOG_DIR}/weblogic-proxy-access.log combined
+</VirtualHost>
+EOF
+
+    # Enable the proxy site
+    a2dissite 000-default
+    a2ensite weblogic-proxy
+
+    systemctl restart apache2
+    systemctl enable apache2
+
+    echo "==========================================="
+    echo "Apache HTTPD + WebLogic base setup complete"
+    echo ""
+    echo "Apache Proxy: http://localhost:8100"
+    echo "WebLogic Admin (direct): http://localhost:7003/console"
+    echo ""
+    echo "NOTE: Download WebLogic installer from Oracle"
+    echo "and install manually as the oracle user."
+    echo "==========================================="
+  SHELL
+end

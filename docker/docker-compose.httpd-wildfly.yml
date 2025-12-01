@@ -1,0 +1,69 @@
+# Docker Compose for Apache HTTPD + WildFly Hybrid Environment
+# Apache as reverse proxy in front of WildFly Application Server
+#
+# Security Note: Create a .env file with WILDFLY_ADMIN_PASSWORD set before running
+
+services:
+  apache:
+    image: httpd:2.4-alpine
+    container_name: httpd-wildfly-proxy
+    hostname: apache
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./conf/httpd-wildfly.conf:/usr/local/apache2/conf/extra/httpd-vhosts.conf:ro
+      - ./htdocs:/usr/local/apache2/htdocs
+      - apache-logs:/usr/local/apache2/logs
+    depends_on:
+      - wildfly
+    command: >
+      sh -c "
+        sed -i 's/#LoadModule proxy_module/LoadModule proxy_module/' /usr/local/apache2/conf/httpd.conf
+        && sed -i 's/#LoadModule proxy_http_module/LoadModule proxy_http_module/' /usr/local/apache2/conf/httpd.conf
+        && sed -i 's/#LoadModule proxy_wstunnel_module/LoadModule proxy_wstunnel_module/' /usr/local/apache2/conf/httpd.conf
+        && sed -i 's/#Include conf\\/extra\\/httpd-vhosts.conf/Include conf\\/extra\\/httpd-vhosts.conf/' /usr/local/apache2/conf/httpd.conf
+        && httpd-foreground
+      "
+    restart: unless-stopped
+
+  wildfly:
+    image: quay.io/wildfly/wildfly:30.0.1.Final-jdk17
+    container_name: wildfly-backend
+    hostname: wildfly
+    ports:
+      - "9990:9990"   # Admin Console (direct access for management)
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx1024m
+      - WILDFLY_ADMIN_PASSWORD=${WILDFLY_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - ./deployments:/opt/jboss/wildfly/standalone/deployments
+      - wildfly-data:/opt/jboss/wildfly/standalone/data
+      - wildfly-logs:/opt/jboss/wildfly/standalone/log
+    command: >
+      bash -c "
+        /opt/jboss/wildfly/bin/add-user.sh -u admin -p $${WILDFLY_ADMIN_PASSWORD} -g admin
+        && /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0 -bmanagement 0.0.0.0
+      "
+    restart: unless-stopped
+
+volumes:
+  apache-logs:
+  wildfly-data:
+  wildfly-logs:
+
+# Create conf/httpd-wildfly.conf with:
+# <VirtualHost *:80>
+#     ProxyPreserveHost On
+#     ProxyPass / http://wildfly:8080/
+#     ProxyPassReverse / http://wildfly:8080/
+#     RequestHeader set X-Forwarded-Proto "http"
+#     RequestHeader set X-Forwarded-Port "80"
+# </VirtualHost>
+#
+# Usage:
+# 1. Create .env with WILDFLY_ADMIN_PASSWORD=your_password
+# 2. Create conf/httpd-wildfly.conf with proxy settings
+# 3. Start: docker compose -f docker-compose.httpd-wildfly.yml up -d
+# 4. Access via Apache: http://localhost
+# 5. WildFly Admin: http://localhost:9990

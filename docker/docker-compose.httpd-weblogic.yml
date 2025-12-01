@@ -1,0 +1,59 @@
+# Docker Compose for Apache HTTPD + WebLogic Hybrid Environment
+# Apache as reverse proxy in front of Oracle WebLogic Server
+#
+# Note: WebLogic images require Oracle Container Registry authentication
+
+services:
+  apache:
+    image: httpd:2.4-alpine
+    container_name: httpd-weblogic-proxy
+    hostname: apache
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./conf/httpd-weblogic.conf:/usr/local/apache2/conf/extra/httpd-vhosts.conf:ro
+      - apache-logs:/usr/local/apache2/logs
+    depends_on:
+      - weblogic
+    command: >
+      sh -c "
+        sed -i 's/#LoadModule proxy_module/LoadModule proxy_module/' /usr/local/apache2/conf/httpd.conf
+        && sed -i 's/#LoadModule proxy_http_module/LoadModule proxy_http_module/' /usr/local/apache2/conf/httpd.conf
+        && sed -i 's/#Include conf\\/extra\\/httpd-vhosts.conf/Include conf\\/extra\\/httpd-vhosts.conf/' /usr/local/apache2/conf/httpd.conf
+        && httpd-foreground
+      "
+    restart: unless-stopped
+
+  weblogic:
+    image: container-registry.oracle.com/middleware/weblogic:14.1.1.0-dev-11
+    container_name: weblogic-backend
+    hostname: weblogic
+    ports:
+      - "7001:7001"   # Admin Console (direct access for management)
+    environment:
+      - DOMAIN_NAME=base_domain
+      - ADMIN_LISTEN_PORT=7001
+      - ADMIN_NAME=AdminServer
+      - ADMINISTRATION_PORT_ENABLED=false
+      - PRODUCTION_MODE=dev
+    volumes:
+      - weblogic-domain:/u01/oracle/user_projects/domains
+      - ./deployments:/u01/oracle/deployments
+    restart: unless-stopped
+
+volumes:
+  apache-logs:
+  weblogic-domain:
+
+# Note: Before using this compose file:
+# 1. Log in to Oracle Container Registry: docker login container-registry.oracle.com
+# 2. Accept the license agreement for WebLogic images
+# 3. Create conf/httpd-weblogic.conf with the proxy configuration
+#
+# Example httpd-weblogic.conf:
+# <VirtualHost *:80>
+#     ProxyPreserveHost On
+#     ProxyPass / http://weblogic:7001/
+#     ProxyPassReverse / http://weblogic:7001/
+# </VirtualHost>

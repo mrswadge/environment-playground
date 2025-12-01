@@ -1,0 +1,135 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Apache HTTPD + Tomcat Hybrid Environment Vagrantfile
+# Apache as reverse proxy with load balancing for Tomcat
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "httpd-tomcat"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.23"
+
+  # Apache reverse proxy ports (external access)
+  config.vm.network "forwarded_port", guest: 80, host: 8102
+  config.vm.network "forwarded_port", guest: 443, host: 8103
+  # Tomcat direct access (for management)
+  config.vm.network "forwarded_port", guest: 8080, host: 8104
+
+  # VM resources
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "httpd-tomcat-vm"
+    vb.memory = "2048"
+    vb.cpus = 2
+  end
+
+  # Shared folders
+  config.vm.synced_folder "./webapps", "/home/vagrant/webapps", create: true
+  config.vm.synced_folder "./htdocs", "/var/www/html", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y apache2 apache2-utils ssl-cert openjdk-17-jdk wget curl
+
+    # Enable Apache modules for reverse proxy
+    a2enmod proxy
+    a2enmod proxy_http
+    a2enmod proxy_ajp
+    a2enmod proxy_balancer
+    a2enmod lbmethod_byrequests
+    a2enmod headers
+    a2enmod ssl
+    a2enmod rewrite
+
+    # Set JAVA_HOME
+    cat > /etc/profile.d/java.sh << 'EOF'
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH=$JAVA_HOME/bin:$PATH
+EOF
+    source /etc/profile.d/java.sh
+
+    # Create tomcat user
+    useradd -m -s /bin/bash tomcat || true
+
+    # Download and install Tomcat
+    TOMCAT_VERSION="10.1.18"
+    cd /tmp
+    wget -q https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz
+    tar xzf apache-tomcat-${TOMCAT_VERSION}.tar.gz
+    mv apache-tomcat-${TOMCAT_VERSION} /opt/tomcat
+    chown -R tomcat:tomcat /opt/tomcat
+
+    # Configure Tomcat AJP connector
+    sed -i 's/<!--.*<Connector protocol="AJP/<Connector protocol="AJP/' /opt/tomcat/conf/server.xml
+    sed -i 's/secretRequired="true".*-->$/secretRequired="false" \/>/' /opt/tomcat/conf/server.xml
+
+    # Create Tomcat systemd service
+    cat > /etc/systemd/system/tomcat.service << 'EOF'
+[Unit]
+Description=Apache Tomcat Web Application Container
+After=network.target
+
+[Service]
+Type=forking
+User=tomcat
+Group=tomcat
+Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
+Environment="CATALINA_HOME=/opt/tomcat"
+Environment="CATALINA_BASE=/opt/tomcat"
+Environment="CATALINA_PID=/opt/tomcat/temp/tomcat.pid"
+ExecStart=/opt/tomcat/bin/startup.sh
+ExecStop=/opt/tomcat/bin/shutdown.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Configure Apache as reverse proxy for Tomcat
+    cat > /etc/apache2/sites-available/tomcat-proxy.conf << 'EOF'
+<VirtualHost *:80>
+    ServerName localhost
+    
+    # Proxy settings for Tomcat via HTTP
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:8080/
+    ProxyPassReverse / http://localhost:8080/
+    
+    # Alternative: Use AJP connector for better performance
+    # ProxyPass / ajp://localhost:8009/
+    # ProxyPassReverse / ajp://localhost:8009/
+    
+    # Headers for proper forwarding
+    RequestHeader set X-Forwarded-Proto "http"
+    RequestHeader set X-Forwarded-Port "80"
+    
+    # Static content can be served directly by Apache
+    # ProxyPass /static !
+    # Alias /static /var/www/html/static
+    
+    ErrorLog \${APACHE_LOG_DIR}/tomcat-proxy-error.log
+    CustomLog \${APACHE_LOG_DIR}/tomcat-proxy-access.log combined
+</VirtualHost>
+EOF
+
+    # Enable sites and services
+    a2dissite 000-default
+    a2ensite tomcat-proxy
+
+    systemctl daemon-reload
+    systemctl enable tomcat
+    systemctl start tomcat
+    systemctl restart apache2
+
+    echo "==========================================="
+    echo "Apache HTTPD + Tomcat environment installed!"
+    echo ""
+    echo "Apache Proxy: http://localhost:8102"
+    echo "Tomcat Direct: http://localhost:8104"
+    echo ""
+    echo "Deploy apps to /opt/tomcat/webapps"
+    echo "==========================================="
+  SHELL
+end

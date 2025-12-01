@@ -1,0 +1,24 @@
+# Docker Compose for Java 21 Development Environment
+# Includes Eclipse Temurin JDK 21, Maven, and Gradle
+
+services:
+  java21-dev:
+    image: eclipse-temurin:21-jdk
+    container_name: java21-dev
+    hostname: java21-dev
+    volumes:
+      - ./projects:/home/app/projects
+      - maven-cache:/root/.m2
+      - gradle-cache:/root/.gradle
+    working_dir: /home/app/projects
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    environment:
+      - JAVA_HOME=/opt/java/openjdk
+    command: tail -f /dev/null  # Keep container running for development
+    restart: unless-stopped
+
+volumes:
+  maven-cache:
+  gradle-cache:
