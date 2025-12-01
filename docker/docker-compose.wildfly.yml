@@ -1,5 +1,7 @@
 # Docker Compose for WildFly Application Server
 # WildFly 30 with JDK 17
+#
+# Security Note: Create a .env file with WILDFLY_ADMIN_PASSWORD set before running
 
 services:
   wildfly:
@@ -30,13 +32,14 @@ services:
       - "9991:9990"
     environment:
       - JAVA_OPTS=-Xms512m -Xmx1024m
+      - WILDFLY_ADMIN_PASSWORD=${WILDFLY_ADMIN_PASSWORD:-changeme}
     volumes:
       - ./admin-deployments:/opt/jboss/wildfly/standalone/deployments
       - wildfly-admin-data:/opt/jboss/wildfly/standalone/data
     # Add admin user and start
     command: >
       bash -c "
-        /opt/jboss/wildfly/bin/add-user.sh -u admin -p admin123 -g admin
+        /opt/jboss/wildfly/bin/add-user.sh -u admin -p $${WILDFLY_ADMIN_PASSWORD} -g admin
         && /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0 -bmanagement 0.0.0.0
       "
     restart: unless-stopped

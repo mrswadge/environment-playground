@@ -3,6 +3,9 @@
 
 # n8n Workflow Automation Vagrantfile
 # Installs n8n with Node.js
+#
+# Security Note: The Node.js installation script is fetched from nodesource.com.
+# For enhanced security, download and verify the script before running.
 
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"

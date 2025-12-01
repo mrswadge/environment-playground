@@ -3,6 +3,9 @@
 
 # WildFly Application Server Vagrantfile
 # Installs WildFly 30 with OpenJDK 17
+#
+# Security Note: Change the default admin password after provisioning
+# Run: /opt/wildfly/bin/add-user.sh to create a new admin user
 
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"

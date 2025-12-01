@@ -3,6 +3,9 @@
 
 # Ollama AI Server Vagrantfile
 # Installs Ollama for running LLMs locally
+#
+# Security Note: The installation script is fetched from ollama.com.
+# For enhanced security, download and verify the script before running.
 
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"

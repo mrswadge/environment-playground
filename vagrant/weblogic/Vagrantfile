@@ -3,6 +3,9 @@
 
 # Oracle WebLogic Server Vagrantfile
 # Note: WebLogic requires manual download of installer due to Oracle licensing
+#
+# Security Note: Change the default oracle user password after provisioning
+# Run: sudo passwd oracle
 
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"

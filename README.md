@@ -14,6 +14,7 @@ A collection of Vagrant and Docker Compose configurations for various developmen
 │   ├── ollama/         # Ollama AI Server
 │   └── apache-httpd/   # Apache HTTP Server
 └── docker/
+    ├── .env.example
     ├── docker-compose.java.yml
     ├── docker-compose.weblogic.yml
     ├── docker-compose.tomcat.yml
@@ -74,8 +75,20 @@ Navigate to the docker directory and run:
 
 ```bash
 cd docker
+# Copy and configure environment variables
+cp .env.example .env
+# Edit .env with your secure passwords
 docker compose -f docker-compose.<environment>.yml up -d
 ```
+
+### Environment Variables
+
+Some compose files require environment variables for passwords. Copy `.env.example` to `.env` and set secure values:
+
+| Variable | Used By | Description |
+|----------|---------|-------------|
+| `WILDFLY_ADMIN_PASSWORD` | docker-compose.wildfly.yml | WildFly admin console password |
+| `POSTGRES_PASSWORD` | docker-compose.n8n.yml | PostgreSQL database password |
 
 ### Available Compose Files
 
