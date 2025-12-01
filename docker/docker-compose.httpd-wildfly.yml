@@ -60,6 +60,13 @@ volumes:
 #     RequestHeader set X-Forwarded-Proto "http"
 #     RequestHeader set X-Forwarded-Port "80"
 # </VirtualHost>
+# <VirtualHost *:443>
+#     ProxyPreserveHost On
+#     ProxyPass / http://wildfly:8080/
+#     ProxyPassReverse / http://wildfly:8080/
+#     RequestHeader set X-Forwarded-Proto "https"
+#     RequestHeader set X-Forwarded-Port "443"
+# </VirtualHost>
 #
 # Usage:
 # 1. Create .env with WILDFLY_ADMIN_PASSWORD=your_password

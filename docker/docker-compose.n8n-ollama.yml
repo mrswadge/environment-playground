@@ -6,6 +6,8 @@ services:
     image: ollama/ollama:latest
     container_name: n8n-ollama-backend
     hostname: ollama
+    ports:
+      - "11434:11434"  # External API access for debugging/direct use
     volumes:
       - ollama-models:/root/.ollama
     environment:
