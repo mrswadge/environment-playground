@@ -1,0 +1,42 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Java Development Environment Vagrantfile
+# Installs OpenJDK 17, Maven, and Gradle
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "java-dev"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.10"
+
+  # Port forwarding for typical Java applications
+  config.vm.network "forwarded_port", guest: 8080, host: 8080
+  config.vm.network "forwarded_port", guest: 8443, host: 8443
+
+  # VM resources
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "java-dev-vm"
+    vb.memory = "2048"
+    vb.cpus = 2
+  end
+
+  # Shared folder for projects
+  config.vm.synced_folder "./projects", "/home/vagrant/projects", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y openjdk-17-jdk maven gradle git curl wget unzip
+
+    # Set JAVA_HOME
+    echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> /etc/profile.d/java.sh
+    echo 'export PATH=$JAVA_HOME/bin:$PATH' >> /etc/profile.d/java.sh
+
+    # Verify installation
+    java -version
+    mvn -version
+    gradle -version
+  SHELL
+end

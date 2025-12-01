@@ -1,0 +1,42 @@
+# Docker Compose for Apache Tomcat Server
+# Tomcat 10 with JDK 17
+
+services:
+  tomcat:
+    image: tomcat:10.1-jdk17
+    container_name: tomcat-server
+    hostname: tomcat-server
+    ports:
+      - "8080:8080"   # HTTP
+      - "8443:8443"   # HTTPS
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m
+    volumes:
+      - ./webapps:/usr/local/tomcat/webapps
+      - ./conf/tomcat:/usr/local/tomcat/conf/custom:ro
+      - tomcat-logs:/usr/local/tomcat/logs
+    restart: unless-stopped
+
+  # Optional: Tomcat with manager app enabled
+  tomcat-manager:
+    image: tomcat:10.1-jdk17
+    container_name: tomcat-manager
+    hostname: tomcat-manager
+    ports:
+      - "8081:8080"
+    environment:
+      - CATALINA_OPTS=-Xms512m -Xmx1024m
+    volumes:
+      - ./manager-webapps:/usr/local/tomcat/webapps
+      - tomcat-manager-logs:/usr/local/tomcat/logs
+    # Override to enable manager app
+    command: >
+      bash -c "
+        cp -r /usr/local/tomcat/webapps.dist/* /usr/local/tomcat/webapps/ 2>/dev/null || true
+        && catalina.sh run
+      "
+    restart: unless-stopped
+
+volumes:
+  tomcat-logs:
+  tomcat-manager-logs:

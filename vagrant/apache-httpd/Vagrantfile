@@ -1,0 +1,76 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Apache HTTP Server Vagrantfile
+# Installs Apache HTTPD with common modules
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "apache-httpd"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.16"
+
+  # Apache ports
+  config.vm.network "forwarded_port", guest: 80, host: 8084
+  config.vm.network "forwarded_port", guest: 443, host: 8446
+
+  # VM resources
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "apache-httpd-vm"
+    vb.memory = "1024"
+    vb.cpus = 1
+  end
+
+  # Shared folder for web content
+  config.vm.synced_folder "./htdocs", "/var/www/html", create: true
+  config.vm.synced_folder "./conf", "/etc/apache2/sites-available/custom", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y apache2 apache2-utils ssl-cert
+
+    # Enable common modules
+    a2enmod rewrite
+    a2enmod ssl
+    a2enmod headers
+    a2enmod proxy
+    a2enmod proxy_http
+    a2enmod proxy_balancer
+    a2enmod lbmethod_byrequests
+
+    # Enable SSL site
+    a2ensite default-ssl
+
+    # Create a sample index page
+    cat > /var/www/html/index.html << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Apache HTTPD - Vagrant</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        h1 { color: #333; }
+        .info { background: #f5f5f5; padding: 20px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Welcome to Apache HTTPD</h1>
+    <div class="info">
+        <p>Apache HTTP Server is running successfully in Vagrant.</p>
+        <p>Modify files in the <code>./htdocs</code> folder to add your content.</p>
+    </div>
+</body>
+</html>
+EOF
+
+    # Restart Apache
+    systemctl restart apache2
+    systemctl enable apache2
+
+    echo "Apache HTTPD installed and running"
+    echo "HTTP: http://localhost:8084"
+    echo "HTTPS: https://localhost:8446"
+  SHELL
+end

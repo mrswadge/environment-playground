@@ -1,0 +1,61 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Oracle WebLogic Server Vagrantfile
+# Note: WebLogic requires manual download of installer due to Oracle licensing
+#
+# Security Note: Change the default oracle user password after provisioning
+# Run: sudo passwd oracle
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "weblogic-server"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.11"
+
+  # WebLogic default ports
+  config.vm.network "forwarded_port", guest: 7001, host: 7001  # Admin Server
+  config.vm.network "forwarded_port", guest: 7002, host: 7002  # Admin Server SSL
+  config.vm.network "forwarded_port", guest: 8001, host: 8001  # Managed Server
+
+  # VM resources - WebLogic requires more memory
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "weblogic-server-vm"
+    vb.memory = "4096"
+    vb.cpus = 2
+  end
+
+  # Shared folder for deployments and installer
+  config.vm.synced_folder "./deployments", "/home/vagrant/deployments", create: true
+  config.vm.synced_folder "./installer", "/home/vagrant/installer", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y openjdk-11-jdk unzip wget curl
+
+    # Set JAVA_HOME
+    echo 'export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64' >> /etc/profile.d/java.sh
+    echo 'export PATH=$JAVA_HOME/bin:$PATH' >> /etc/profile.d/java.sh
+    source /etc/profile.d/java.sh
+
+    # Create WebLogic user
+    useradd -m -s /bin/bash oracle || true
+    echo "oracle:oracle" | chpasswd
+
+    # Create WebLogic directories
+    mkdir -p /opt/oracle/middleware
+    mkdir -p /opt/oracle/config/domains
+    chown -R oracle:oracle /opt/oracle
+
+    # Note: WebLogic installer must be downloaded manually from Oracle
+    # Place the installer in the ./installer folder and run:
+    # java -jar fmw_14.1.1.0.0_wls_lite_generic.jar
+    echo "=========================================="
+    echo "WebLogic base setup complete."
+    echo "Download WebLogic installer from Oracle and place in /home/vagrant/installer"
+    echo "Then run: java -jar <installer.jar>"
+    echo "=========================================="
+  SHELL
+end

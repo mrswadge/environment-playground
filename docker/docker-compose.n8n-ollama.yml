@@ -1,0 +1,56 @@
+# Docker Compose for n8n + Ollama Hybrid Environment
+# AI-powered workflow automation with local LLM support
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: n8n-ollama-backend
+    hostname: ollama
+    ports:
+      - "11434:11434"  # External API access for debugging/direct use
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    # Note: For GPU support, add:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-with-ollama
+    hostname: n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=UTC
+      # Ollama connection for AI nodes
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n-files:/files
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+volumes:
+  ollama-models:
+  n8n-data:
+
+# Usage:
+# 1. Start services: docker compose -f docker-compose.n8n-ollama.yml up -d
+# 2. Pull a model: docker exec -it n8n-ollama-backend ollama pull llama2
+# 3. Access n8n: http://localhost:5678
+# 4. In n8n, use HTTP Request node to call:
+#    POST http://ollama:11434/api/generate
+#    Body: {"model": "llama2", "prompt": "your prompt here"}

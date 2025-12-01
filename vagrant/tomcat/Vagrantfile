@@ -1,0 +1,84 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Apache Tomcat Server Vagrantfile
+# Installs Tomcat 10 with OpenJDK 17
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "tomcat-server"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.12"
+
+  # Tomcat ports
+  config.vm.network "forwarded_port", guest: 8080, host: 8082  # HTTP
+  config.vm.network "forwarded_port", guest: 8443, host: 8444  # HTTPS
+  config.vm.network "forwarded_port", guest: 8009, host: 8009  # AJP
+
+  # VM resources
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "tomcat-server-vm"
+    vb.memory = "2048"
+    vb.cpus = 2
+  end
+
+  # Shared folder for web applications
+  config.vm.synced_folder "./webapps", "/home/vagrant/webapps", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y openjdk-17-jdk wget curl
+
+    # Set JAVA_HOME
+    echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> /etc/profile.d/java.sh
+    source /etc/profile.d/java.sh
+
+    # Create tomcat user
+    useradd -m -s /bin/bash tomcat || true
+
+    # Download and install Tomcat 10
+    TOMCAT_VERSION="10.1.18"
+    cd /tmp
+    wget -q https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz
+    tar xzf apache-tomcat-${TOMCAT_VERSION}.tar.gz
+    mv apache-tomcat-${TOMCAT_VERSION} /opt/tomcat
+    chown -R tomcat:tomcat /opt/tomcat
+
+    # Set Tomcat environment
+    cat > /etc/profile.d/tomcat.sh << 'EOF'
+export CATALINA_HOME=/opt/tomcat
+export CATALINA_BASE=/opt/tomcat
+export PATH=$CATALINA_HOME/bin:$PATH
+EOF
+
+    # Create systemd service
+    cat > /etc/systemd/system/tomcat.service << 'EOF'
+[Unit]
+Description=Apache Tomcat Web Application Container
+After=network.target
+
+[Service]
+Type=forking
+User=tomcat
+Group=tomcat
+Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
+Environment="CATALINA_HOME=/opt/tomcat"
+Environment="CATALINA_BASE=/opt/tomcat"
+Environment="CATALINA_PID=/opt/tomcat/temp/tomcat.pid"
+ExecStart=/opt/tomcat/bin/startup.sh
+ExecStop=/opt/tomcat/bin/shutdown.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable tomcat
+    systemctl start tomcat
+
+    echo "Tomcat installed and running on port 8080"
+  SHELL
+end

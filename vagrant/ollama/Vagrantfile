@@ -1,0 +1,61 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Ollama AI Server Vagrantfile
+# Installs Ollama for running LLMs locally
+#
+# Security Note: The installation script is fetched from ollama.com.
+# For enhanced security, download and verify the script before running.
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "ollama-server"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.15"
+
+  # Ollama API port
+  config.vm.network "forwarded_port", guest: 11434, host: 11434
+
+  # VM resources - LLMs need more resources
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "ollama-server-vm"
+    vb.memory = "8192"
+    vb.cpus = 4
+  end
+
+  # Shared folder for models
+  config.vm.synced_folder "./models", "/home/vagrant/.ollama/models", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y curl wget
+
+    # Install Ollama
+    curl -fsSL https://ollama.com/install.sh | sh
+
+    # Configure Ollama to listen on all interfaces
+    mkdir -p /etc/systemd/system/ollama.service.d
+    cat > /etc/systemd/system/ollama.service.d/override.conf << 'EOF'
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0"
+EOF
+
+    systemctl daemon-reload
+    systemctl enable ollama
+    systemctl restart ollama
+
+    # Wait for Ollama to start
+    sleep 5
+
+    # Pull a small model for testing (optional)
+    # ollama pull llama2
+
+    echo "Ollama installed and running"
+    echo "API available at: http://localhost:11434"
+    echo ""
+    echo "To pull a model, run: ollama pull <model-name>"
+    echo "Example models: llama2, mistral, codellama, phi"
+  SHELL
+end

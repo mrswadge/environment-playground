@@ -1,0 +1,102 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# n8n + Ollama Hybrid Environment Vagrantfile
+# AI-powered workflow automation with local LLM support
+#
+# Security Note: The installation scripts are fetched from remote sources.
+# For enhanced security, download and verify the scripts before running.
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "n8n-ollama"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.21"
+
+  # n8n web interface
+  config.vm.network "forwarded_port", guest: 5678, host: 5680
+  # Ollama API
+  config.vm.network "forwarded_port", guest: 11434, host: 11436
+
+  # VM resources - LLMs need more memory
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "n8n-ollama-vm"
+    vb.memory = "8192"
+    vb.cpus = 4
+  end
+
+  # Shared folders
+  config.vm.synced_folder "./n8n-data", "/home/vagrant/.n8n", create: true
+  config.vm.synced_folder "./ollama-models", "/home/vagrant/.ollama/models", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y curl wget gnupg2
+
+    # Install Node.js 20.x LTS for n8n
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+
+    # Install n8n globally
+    npm install -g n8n
+
+    # Install Ollama
+    curl -fsSL https://ollama.com/install.sh | sh
+
+    # Configure Ollama to listen on all interfaces
+    mkdir -p /etc/systemd/system/ollama.service.d
+    cat > /etc/systemd/system/ollama.service.d/override.conf << 'EOF'
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0"
+EOF
+
+    # Create n8n user
+    useradd -m -s /bin/bash n8n || true
+    mkdir -p /home/n8n/.n8n
+    chown -R n8n:n8n /home/n8n
+
+    # Create n8n systemd service with Ollama integration
+    cat > /etc/systemd/system/n8n.service << 'EOF'
+[Unit]
+Description=n8n Workflow Automation with Ollama Integration
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=n8n
+Group=n8n
+Environment="N8N_HOST=0.0.0.0"
+Environment="N8N_PORT=5678"
+Environment="N8N_PROTOCOL=http"
+Environment="N8N_USER_FOLDER=/home/n8n/.n8n"
+Environment="OLLAMA_HOST=localhost:11434"
+ExecStart=/usr/bin/n8n start
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable ollama
+    systemctl start ollama
+
+    # Wait for Ollama to start
+    sleep 5
+
+    systemctl enable n8n
+    systemctl start n8n
+
+    echo "==========================================="
+    echo "n8n + Ollama environment installed!"
+    echo "n8n interface: http://localhost:5680"
+    echo "Ollama API: http://localhost:11436"
+    echo ""
+    echo "To pull a model: ollama pull llama2"
+    echo "Use the HTTP Request node in n8n to call:"
+    echo "  POST http://localhost:11434/api/generate"
+    echo "==========================================="
+  SHELL
+end
