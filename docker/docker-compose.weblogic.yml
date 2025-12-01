@@ -1,0 +1,30 @@
+# Docker Compose for Oracle WebLogic Server
+# Note: WebLogic images require Oracle Container Registry authentication
+
+services:
+  weblogic:
+    image: container-registry.oracle.com/middleware/weblogic:14.1.1.0-dev-11
+    container_name: weblogic-server
+    hostname: weblogic-server
+    ports:
+      - "7001:7001"   # Admin Server HTTP
+      - "7002:7002"   # Admin Server HTTPS
+      - "8001:8001"   # Managed Server
+    environment:
+      - DOMAIN_NAME=base_domain
+      - ADMIN_LISTEN_PORT=7001
+      - ADMIN_NAME=AdminServer
+      - ADMINISTRATION_PORT_ENABLED=false
+      - PRODUCTION_MODE=dev
+    volumes:
+      - weblogic-domain:/u01/oracle/user_projects/domains
+      - ./deployments:/u01/oracle/deployments
+    restart: unless-stopped
+
+# Note: Before using this compose file, you need to:
+# 1. Log in to Oracle Container Registry: docker login container-registry.oracle.com
+# 2. Accept the license agreement for WebLogic images at:
+#    https://container-registry.oracle.com
+
+volumes:
+  weblogic-domain:

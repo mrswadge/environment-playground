@@ -1,0 +1,86 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# WildFly Application Server Vagrantfile
+# Installs WildFly 30 with OpenJDK 17
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "wildfly-server"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.13"
+
+  # WildFly ports
+  config.vm.network "forwarded_port", guest: 8080, host: 8083  # HTTP
+  config.vm.network "forwarded_port", guest: 8443, host: 8445  # HTTPS
+  config.vm.network "forwarded_port", guest: 9990, host: 9990  # Admin Console
+
+  # VM resources
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "wildfly-server-vm"
+    vb.memory = "2048"
+    vb.cpus = 2
+  end
+
+  # Shared folder for deployments
+  config.vm.synced_folder "./deployments", "/home/vagrant/deployments", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y openjdk-17-jdk wget curl unzip
+
+    # Set JAVA_HOME
+    echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> /etc/profile.d/java.sh
+    source /etc/profile.d/java.sh
+
+    # Create wildfly user
+    useradd -m -s /bin/bash wildfly || true
+
+    # Download and install WildFly
+    WILDFLY_VERSION="30.0.1.Final"
+    cd /tmp
+    wget -q https://github.com/wildfly/wildfly/releases/download/${WILDFLY_VERSION}/wildfly-${WILDFLY_VERSION}.tar.gz
+    tar xzf wildfly-${WILDFLY_VERSION}.tar.gz
+    mv wildfly-${WILDFLY_VERSION} /opt/wildfly
+    chown -R wildfly:wildfly /opt/wildfly
+
+    # Set WildFly environment
+    cat > /etc/profile.d/wildfly.sh << 'EOF'
+export JBOSS_HOME=/opt/wildfly
+export PATH=$JBOSS_HOME/bin:$PATH
+EOF
+
+    # Create admin user
+    /opt/wildfly/bin/add-user.sh -u admin -p admin123 -g admin
+
+    # Create systemd service
+    cat > /etc/systemd/system/wildfly.service << 'EOF'
+[Unit]
+Description=WildFly Application Server
+After=network.target
+
+[Service]
+Type=simple
+User=wildfly
+Group=wildfly
+Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
+Environment="JBOSS_HOME=/opt/wildfly"
+ExecStart=/opt/wildfly/bin/standalone.sh -b 0.0.0.0 -bmanagement 0.0.0.0
+ExecStop=/opt/wildfly/bin/jboss-cli.sh --connect command=:shutdown
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable wildfly
+    systemctl start wildfly
+
+    echo "WildFly installed and running"
+    echo "Admin console: http://localhost:9990"
+    echo "Admin credentials: admin / admin123"
+  SHELL
+end

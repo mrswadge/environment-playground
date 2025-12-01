@@ -1,0 +1,52 @@
+# Docker Compose for Ollama AI Server
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-server
+    hostname: ollama-server
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+
+  # Ollama with Open WebUI for chat interface
+  ollama-webui:
+    image: ollama/ollama:latest
+    container_name: ollama-webui-backend
+    hostname: ollama-backend
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama-webui-models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    hostname: open-webui
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama-webui-backend:11434
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      - ollama-webui
+    restart: unless-stopped
+
+volumes:
+  ollama-models:
+  ollama-webui-models:
+  open-webui-data:
+
+# Usage:
+# 1. Start the services: docker compose -f docker-compose.ollama.yml up -d
+# 2. Pull a model: docker exec -it ollama-server ollama pull llama2
+# 3. Access Ollama API: http://localhost:11434
+# 4. Access Open WebUI: http://localhost:3000

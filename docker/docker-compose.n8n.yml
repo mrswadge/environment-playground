@@ -1,0 +1,61 @@
+# Docker Compose for n8n Workflow Automation
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-server
+    hostname: n8n-server
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=UTC
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n-files:/files
+    restart: unless-stopped
+
+  # n8n with PostgreSQL for production use
+  n8n-postgres:
+    image: n8nio/n8n:latest
+    container_name: n8n-postgres
+    hostname: n8n-postgres
+    ports:
+      - "5679:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=n8n_password
+      - GENERIC_TIMEZONE=UTC
+    volumes:
+      - n8n-postgres-data:/home/node/.n8n
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: n8n-db
+    hostname: n8n-db
+    environment:
+      - POSTGRES_USER=n8n
+      - POSTGRES_PASSWORD=n8n_password
+      - POSTGRES_DB=n8n
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  n8n-data:
+  n8n-postgres-data:
+  postgres-data:

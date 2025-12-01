@@ -1,0 +1,72 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# n8n Workflow Automation Vagrantfile
+# Installs n8n with Node.js
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "n8n-server"
+
+  # Network configuration
+  config.vm.network "private_network", ip: "192.168.56.14"
+
+  # n8n web interface
+  config.vm.network "forwarded_port", guest: 5678, host: 5678
+
+  # VM resources
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "n8n-server-vm"
+    vb.memory = "2048"
+    vb.cpus = 2
+  end
+
+  # Shared folder for workflows and data
+  config.vm.synced_folder "./data", "/home/vagrant/.n8n", create: true
+
+  # Provisioning script
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y curl wget gnupg2
+
+    # Install Node.js 20.x LTS
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+
+    # Install n8n globally
+    npm install -g n8n
+
+    # Create n8n user
+    useradd -m -s /bin/bash n8n || true
+    mkdir -p /home/n8n/.n8n
+    chown -R n8n:n8n /home/n8n
+
+    # Create systemd service
+    cat > /etc/systemd/system/n8n.service << 'EOF'
+[Unit]
+Description=n8n Workflow Automation
+After=network.target
+
+[Service]
+Type=simple
+User=n8n
+Group=n8n
+Environment="N8N_HOST=0.0.0.0"
+Environment="N8N_PORT=5678"
+Environment="N8N_PROTOCOL=http"
+Environment="N8N_USER_FOLDER=/home/n8n/.n8n"
+ExecStart=/usr/bin/n8n start
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable n8n
+    systemctl start n8n
+
+    echo "n8n installed and running"
+    echo "Access the web interface at: http://localhost:5678"
+  SHELL
+end

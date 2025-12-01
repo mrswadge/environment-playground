@@ -1,0 +1,47 @@
+# Docker Compose for WildFly Application Server
+# WildFly 30 with JDK 17
+
+services:
+  wildfly:
+    image: quay.io/wildfly/wildfly:30.0.1.Final-jdk17
+    container_name: wildfly-server
+    hostname: wildfly-server
+    ports:
+      - "8080:8080"   # HTTP
+      - "8443:8443"   # HTTPS
+      - "9990:9990"   # Admin Console
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx1024m
+    volumes:
+      - ./deployments:/opt/jboss/wildfly/standalone/deployments
+      - wildfly-data:/opt/jboss/wildfly/standalone/data
+      - wildfly-logs:/opt/jboss/wildfly/standalone/log
+    # Start with management enabled and bind to all interfaces
+    command: /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0 -bmanagement 0.0.0.0
+    restart: unless-stopped
+
+  # WildFly with admin user pre-configured
+  wildfly-admin:
+    image: quay.io/wildfly/wildfly:30.0.1.Final-jdk17
+    container_name: wildfly-admin
+    hostname: wildfly-admin
+    ports:
+      - "8081:8080"
+      - "9991:9990"
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx1024m
+    volumes:
+      - ./admin-deployments:/opt/jboss/wildfly/standalone/deployments
+      - wildfly-admin-data:/opt/jboss/wildfly/standalone/data
+    # Add admin user and start
+    command: >
+      bash -c "
+        /opt/jboss/wildfly/bin/add-user.sh -u admin -p admin123 -g admin
+        && /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0 -bmanagement 0.0.0.0
+      "
+    restart: unless-stopped
+
+volumes:
+  wildfly-data:
+  wildfly-logs:
+  wildfly-admin-data:
